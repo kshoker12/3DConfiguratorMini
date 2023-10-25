@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import React, {useContext, useState} from 'react';
-import {AppContext} from '../context/AppContext';
-import {Canvas} from "react-three-fiber";
-import { OrbitControls, Stars, PerspectiveCamera, Box} from "@react-three/drei";
+import React, {useContext, useEffect, useState, useRef} from 'react';
+import {AppContext} from '../context/AppContext.js';
+import {Canvas, useFrame, useThree} from "react-three-fiber";
+import {OrbitControls, Stars, PerspectiveCamera, Box} from "@react-three/drei";
 import { Physics} from "@react-three/cannon";
-
+import 'bootstrap/dist/css/bootstrap.min.css';
+import { CameraHelper } from 'three';
 
 const front = new THREE.TextureLoader().load('models/front.PNG' ); 
 const bottom = new THREE.TextureLoader().load('models/bottom.PNG' ); 
@@ -16,20 +17,19 @@ let inch = 0.0254;
 let mm = 0.001;
 let subtractor = 2;
 
-const Visualizer = () => {
+const Visualizer = (params) => {
     const {dispatch, payload} = useContext(AppContext);
     const {components} = useContext(AppContext);
     const {appState} = useContext(AppContext);
     const {canvasComponents} = useContext(AppContext);
-    const [length, setLength] = useState(3);
-    const [angle, setAngle] = useState(90);
-    const [cornerType, setCornerType] = useState("Vertical");
-
+    const {length} = useContext(AppContext);
+    const {angle} = useContext(AppContext);
     const legWidth = components[0].width * inch;
     const legHeight = components[0].height * inch;
     const cornerWidth = components[1].width * inch;
     const cornerheight = components[1].height * inch;
     const cornerLength = components[1].length * feet;
+
 
     var hoverArr = []
     for (var q = 0; q < canvasComponents.length; q++) {
@@ -81,47 +81,79 @@ const Visualizer = () => {
         }
       }
 
-    function assignMesh(element) {
-        let mesh = new THREE.Mesh(new THREE.BoxGeometry(element.dimensions[0], element.dimensions[1], element.dimensions[2]), new THREE.MeshStandardMaterial(0xff0000));
-        mesh.position.set(element.position[0], element.position[1], element.position[2]);
+      function assignMesh(element) {
+        let w, h, l = null;
+        switch (element.type) {
+            case "Endcap":
+                w = element.dimensions[0];
+                break;
+            case "Leg":
+                w = legWidth;
+                break;
+            case "Corner":
+                w = cornerWidth;
+                break;
+            default:
+                break;
+        }
+        let mesh = new THREE.Mesh(new THREE.BoxGeometry(element.dimensions[0], element.dimensions[1], w), new THREE.MeshStandardMaterial(0xff0000));
+        if (element.type === "Endcap") {
+            if (element.connectedComponents.length > 0) {
+                let x = element.connectedComponents[0].mesh[element.index].position.x;
+                let y = element.connectedComponents[0].mesh[element.index].position.y;
+                let z = element.connectedComponents[0].mesh[element.index].position.z;
+                mesh.position.set(x,y,z)
+            } else {
+                mesh.position.set(element.position[0], element.position[1], element.position[2]);
+            }
+            
+        } else {
+            if (element.connectedComponents[0].mesh !== null) {
+                let x = element.connectedComponents[0].mesh[element.index].position.x;
+                let y = element.connectedComponents[0].mesh[element.index].position.y;
+                let z = element.connectedComponents[0].mesh[element.index].position.z;
+                mesh.position.set(x,y,z)
+                } else {
+                    mesh.position.set(element.position[0], element.position[1], element.position[2]);
+                }
+        }
+
         mesh.rotation.set(element.angle[0], element.angle[1], element.angle[2]);
         return mesh;
     }
 
-    function createCornerObject(mesh, adder, type, color) {
+    function createCornerObject(mesh, adder, type, color, index) {
         let position = [mesh.position.x, mesh.position.y, mesh.position.z];
         let element_angle = [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z];
-        let object = {id: canvasComponents.length, dimensions: [cornerLength, cornerheight, cornerWidth], position: position, angle: element_angle, type: type, cornerType: cornerType, color: color, connections: [0, 0, 0, 0, 0, 0],  cor_angle: angle, adder: adder, axis: "X"}
+        let object = {id: canvasComponents.length, dimensions: [cornerLength, cornerheight, cornerWidth], position: position, angle: element_angle, type: type, cornerType: null, color: color, connections: [0, 0, 0, 0, 0, 0],  cor_angle: angle, adder: adder, axis: "X", connectedComponents: [], index: index, mesh: null}
         return object;
     }
 
-    function createEndCapObject( mesh, adder, type, color) {
+    function createEndCapObject( mesh, adder, type, color, index) {
         let position = [mesh.position.x, mesh.position.y, mesh.position.z];
         let angle = [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z];
         let width = components[2].width;
-        let object = {id: canvasComponents.length, dimensions: [width,width,width], position: position, angle: angle, type: type, cornerType: cornerType, color: color, connections: [0, 0, 0, 0, 0, 0],  adder: adder}
+        let object = {id: canvasComponents.length, dimensions: [width,width,width], position: position, angle: angle, type: type, color: color, connections: [0, 0, 0, 0, 0, 0],  adder: adder, connectedComponents: [], mesh: null, index: index}
         return object;
     }
 
-    function createLegObject(mesh, type, color, adder, rotation, axis, id) {
+    function createLegObject(mesh, type, color, adder, rotation, axis, id, index) {
         let position = [mesh.position.x, mesh.position.y, mesh.position.z];
         let angle = [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z];
-        let object = {id: canvasComponents.length + id, dimensions: [length * feet, legHeight, legWidth], position: position, angle: angle, type: type, color: color, connections: [0, 0, 0, 0, 0, 0], rotation: rotation, adder: adder, axis: axis}
+        let object = {id: canvasComponents.length + id, dimensions: [length * feet, legHeight, legWidth], position: position, angle: angle, type: type, color: color, connections: [0, 0, 0, 0, 0, 0], rotation: rotation, adder: adder, axis: axis, connectedComponents: [], index: index, mesh: null}
         return object;
     }
 
-    function clickEvent(mesh, element, e, adder, id) {
+    function clickEvent(mesh, element, e, adder, id, index) {
         dispatch({
             type: "STATE_CHANGE",
-            payload: updateState() 
+            payload: 1 
         })
-        element.connections[e.face.materialIndex] = 1;
         let placement_index = oppositeIndex(e.face.materialIndex);
-        let object = createLegObject(mesh, "Leg", "white", adder, 0, "X", id)
-        object.connections[placement_index] = 1;
+        let object = createLegObject(mesh, "Leg", "white", adder, 0, "X", id, index)
         dispatch({
-            type: "ADD_COMPONENT",
-            payload: object
+            type: "UPDATE_ITEM",
+            payload: {element: element, object: object, index: e.face.materialIndex, placement_index: placement_index}
         })
     }
 
@@ -172,12 +204,12 @@ const Visualizer = () => {
     function CornerTexture() {
         return (
             <>
-                <meshStandardMaterial attach = {"material-0"} color = "dark grey"/>
-                <meshStandardMaterial attach = {"material-1"} color = "dark grey"/>
-                <meshStandardMaterial attach = {"material-2"} color = "dark grey"/>
-                <meshStandardMaterial attach = {"material-3"} color = "dark grey"/>
-                <meshStandardMaterial attach = {"material-4"} color = "dark grey"/>
-                <meshStandardMaterial attach = {"material-5"} color = "dark grey"/>
+                <meshStandardMaterial attach = {"material-0"} color = "white"/>
+                <meshStandardMaterial attach = {"material-1"} color = "white"/>
+                <meshStandardMaterial attach = {"material-2"} color = "white"/>
+                <meshStandardMaterial attach = {"material-3"} color = "white"/>
+                <meshStandardMaterial attach = {"material-4"} color = "white"/>
+                <meshStandardMaterial attach = {"material-5"} color = "white"/>
             </>
         )
     }
@@ -257,12 +289,20 @@ const Visualizer = () => {
         mesh4.translateZ(-cornerheight/2)
         mesh4.translateY(-cornerWidth/2)
         
+        element["mesh"] = [mesh1, mesh2, mesh3, mesh4]
+        
         return (
             <>
                 <primitive 
                     object = {mesh1}
-                    onPointerOut={(e) => updateHover(element.id, null)}
-                    onPointerMove={(e) => updateHover(element.id, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation()
+                        updateHover(element.id, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation()
+                        updateHover(element.id, e.face.materialIndex)
+                    }}
                 >
                     <TextureWrap args = {[element.id]}/>
                 </primitive>
@@ -276,12 +316,19 @@ const Visualizer = () => {
                 <primitive 
                     object = {mesh3}
                     onClick = {(e)=>{
-                        if ((appState === 1 || appState === 5) && e.face.materialIndex === 0) {
-                            clickEvent(mesh3, element, e, (feet * length / 2) + cornerLength / 2, 2);
+                        e.stopPropagation()
+                        if (appState === 3 && e.face.materialIndex === 0) {
+                            clickEvent(mesh3, element, e, (feet * length / 2) + cornerLength / 2, 2, 2);
                         }
                     }}
-                    onPointerOut={(e) => updateHover(element.id + 1, null)}
-                    onPointerMove={(e) => updateHover(element.id + 1, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 1, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 1, e.face.materialIndex)
+                    }}
                 >
                     <TextureWrap args = {[element.id + 1]}/>
                 </primitive>
@@ -289,12 +336,19 @@ const Visualizer = () => {
                 <primitive 
                     object = {mesh2}
                     onClick = {(e)=>{
-                        if ((appState === 1 || appState === 5) && e.face.materialIndex === 0) {
-                            clickEvent(mesh2, element, e, (feet * length / 2) + cornerLength / 2, 2);
+                        e.stopPropagation()
+                        if (appState === 3 && e.face.materialIndex === 0) {
+                            clickEvent(mesh2, element, e, (feet * length / 2) + cornerLength / 2, 2, 1);
                         }
                     }}
-                    onPointerOut={(e) => updateHover(element.id + 2, null)}
-                    onPointerMove={(e) => updateHover(element.id + 2, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 2, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 2, e.face.materialIndex)
+                    }}
                 >
                     <TextureWrap args = {[element.id + 2]}/>
                 </primitive>
@@ -341,12 +395,20 @@ const Visualizer = () => {
         mesh4.translateZ(-cornerheight/2)
         mesh4.translateY(-cornerWidth/2)
 
+        element["mesh"] = [mesh1, mesh2, mesh3, mesh4]
+
         return (
             <>
                 <primitive 
                     object = {mesh1}
-                    onPointerOut={(e) => updateHover(element.id, null)}
-                    onPointerMove={(e) => updateHover(element.id, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id, e.face.materialIndex)
+                    }}
                 >
                     <TextureWrap args ={[element.id]}/>
                 </primitive>
@@ -360,12 +422,19 @@ const Visualizer = () => {
                 <primitive 
                     object = {mesh3}
                     onClick = {(e)=>{
-                        if ((appState === 1 || appState === 5) && e.face.materialIndex === 0) {
-                            clickEvent(mesh3, element, e, (feet * length / 2) + cornerLength / 2, 2);
+                        e.stopPropagation()
+                        if (appState === 3 && e.face.materialIndex === 0) {
+                            clickEvent(mesh3, element, e, (feet * length / 2) + cornerLength / 2, 2, 2);
                         }
                     }}
-                    onPointerOut={(e) => updateHover(element.id + 1, null)}
-                    onPointerMove={(e) => updateHover(element.id + 1, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 1, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 1, e.face.materialIndex)
+                    }}
                 >
                     <TextureWrap args = {[element.id + 1]}/>
                 </primitive>
@@ -373,12 +442,19 @@ const Visualizer = () => {
                 <primitive 
                     object = {mesh2}
                     onClick = {(e)=>{
-                        if ((appState === 1 || appState === 5) && e.face.materialIndex === 0) {
-                            clickEvent(mesh2, element, e, (feet * length / 2) + cornerLength / 2, 2);
+                        e.stopPropagation()
+                        if (appState === 3 && e.face.materialIndex === 0) {
+                            clickEvent(mesh2, element, e, (feet * length / 2) + cornerLength / 2, 2, 1);
                         }
                     }}
-                    onPointerOut={(e) => updateHover(element.id + 2, null)}
-                    onPointerMove={(e) => updateHover(element.id + 2, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 2, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 2, e.face.materialIndex)
+                    }}
                 >
                   <TextureWrap args = {[element.id + 2]}/>
                 </primitive>
@@ -428,13 +504,21 @@ const Visualizer = () => {
         mesh5.translateX(cornerLength / 2)
         mesh5.translateY(-cornerWidth / 2);
         mesh5.translateZ(-cornerheight / 2)
+        
+        element["mesh"] = [mesh1, mesh2, mesh3, mesh4, mesh5]
 
         return (
             <>
                 <primitive 
                     object = {mesh1}
-                    onPointerOut={(e) => updateHover(element.id, null)}
-                    onPointerMove={(e) => updateHover(element.id, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id, e.face.materialIndex)
+                    }}
                 >
                     <TextureWrap args = {[element.id]}/>
                 </primitive>
@@ -448,12 +532,19 @@ const Visualizer = () => {
                 <primitive 
                     object = {mesh3}
                     onClick = {(e)=>{
-                        if ((appState === 1 || appState === 5) && e.face.materialIndex === 0) {
-                            clickEvent(mesh3, element, e, (feet * length / 2) + cornerLength / 2, 3);
+                        e.stopPropagation()
+                        if (appState === 3 && e.face.materialIndex === 0) {
+                            clickEvent(mesh3, element, e, (feet * length / 2) + cornerLength / 2, 3, 2);
                         }
                     }}
-                    onPointerOut={(e) => updateHover(element.id + 1, null)}
-                    onPointerMove={(e) => updateHover(element.id + 1, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 1, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 1, e.face.materialIndex)
+                    }}
                 >
                     <TextureWrap args = {[element.id + 1]}/>
                 </primitive>
@@ -461,12 +552,19 @@ const Visualizer = () => {
                 <primitive 
                     object = {mesh2}
                     onClick = {(e)=>{
-                        if ((appState === 1 || appState === 5) && e.face.materialIndex === 0) {
-                            clickEvent(mesh2, element, e, (feet * length / 2) + cornerLength / 2, 3);
+                        e.stopPropagation()
+                        if (appState === 3 && e.face.materialIndex === 0) {
+                            clickEvent(mesh2, element, e, (feet * length / 2) + cornerLength / 2, 3, 1);
                         }
                     }}
-                    onPointerOut={(e) => updateHover(element.id + 2, null)}
-                    onPointerMove={(e) => updateHover(element.id + 2, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 2, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 2, e.face.materialIndex)
+                    }}
                 >
                     <TextureWrap args = {[element.id + 2]}/>
                 </primitive>
@@ -474,12 +572,19 @@ const Visualizer = () => {
                 <primitive 
                     object = {mesh4}
                     onClick = {(e)=>{
-                        if ((appState === 1 || appState === 5) && e.face.materialIndex === 0) {
-                            clickEvent(mesh4, element, e, (feet * length / 2) + cornerLength / 2, 3);
+                        e.stopPropagation()
+                        if (appState === 3 && e.face.materialIndex === 0) {
+                            clickEvent(mesh4, element, e, (feet * length / 2) + cornerLength / 2, 3, 3);
                         }
                     }}
-                    onPointerOut={(e) => updateHover(element.id + 3, null)}
-                    onPointerMove={(e) => updateHover(element.id + 3, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 3, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 3, e.face.materialIndex)
+                    }}
                 >
                     <TextureWrap args = {[element.id + 3]}/>
                 </primitive>
@@ -490,28 +595,54 @@ const Visualizer = () => {
     function XShapeCorner(element) {
         element = element.args;
         let convertedAngle = (120) * Math.PI / 180;
-        let mesh1 = new THREE.Mesh(new THREE.BoxGeometry(2 * element.dimensions[0] + cornerWidth, element.dimensions[1], element.dimensions[2]), new THREE.MeshStandardMaterial(0xff0000));
+        let w, h, l = null;
+        switch (element.type) {
+            case "Endcap":
+                w = element.dimensions[0];
+                break;
+            case "Leg":
+                w = legWidth;
+                break;
+            case "Corner":
+                w = cornerWidth;
+                break;
+            default:
+                break;
+        }
+        let mesh1 = new THREE.Mesh(new THREE.BoxGeometry(2 * element.dimensions[0] + cornerWidth, element.dimensions[1], w), new THREE.MeshStandardMaterial(0xff0000));
         mesh1.rotation.set(element.angle[0], element.angle[1], element.angle[2]);
         mesh1.position.set(element.position[0], element.position[1], element.position[2]);
-        mesh1.translateX(element.adder + cornerLength / 2 + cornerWidth / 2);
+        mesh1.translateX(element.adder + cornerLength / 2 + cornerWidth / 2 - feet);
         
-        let mesh2 = new THREE.Mesh(new THREE.BoxGeometry(2 * element.dimensions[0] + cornerWidth, element.dimensions[1], element.dimensions[2]), new THREE.MeshStandardMaterial(0xff0000));
+        let mesh2 = new THREE.Mesh(new THREE.BoxGeometry(2 * element.dimensions[0] + cornerWidth, element.dimensions[1], w), new THREE.MeshStandardMaterial(0xff0000));
         mesh2.rotation.set(element.angle[0], element.angle[1], element.angle[2]);
         mesh2.position.set(element.position[0], element.position[1], element.position[2]);
-        mesh2.translateX(element.adder + cornerLength / 2 + cornerWidth / 2);
+        mesh2.translateX(element.adder + cornerLength / 2 + cornerWidth / 2 - feet);
         mesh2.rotateY(convertedAngle + Math.PI);
+        let meshclone = mesh2.clone()
+        meshclone.rotateY(Math.PI);
+
+        element["mesh"] = [mesh1, mesh2, meshclone];
+
 
         return (
             <>
                 <primitive 
                     object = {mesh1}
                     onClick = {(e)=>{
-                        if ((appState === 1 || appState === 5) && e.face.materialIndex === 0) {
-                            clickEvent(mesh1, element, e, (length * feet/ 2) + cornerLength  + cornerWidth / 2, 1);
+                        e.stopPropagation()
+                        if (appState === 3 && e.face.materialIndex === 0) {
+                            clickEvent(mesh1, element, e, (length * feet/ 2) + cornerLength, 1, 0);
                         }
                     }}
-                    onPointerOut={(e) => updateHover(element.id, null)}
-                    onPointerMove={(e) => updateHover(element.id, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id, e.face.materialIndex)
+                    }}
                 >
                     <TextureWrap args = {[element.id]}/>
                 </primitive>
@@ -519,18 +650,23 @@ const Visualizer = () => {
                 <primitive 
                     object = {mesh2}
                     onClick = {(e)=>{
-                        if ((appState === 1 || appState === 5)) {
+                        e.stopPropagation()
+                        if (appState === 3) {
                             if (e.face.materialIndex === 0) {
-                                clickEvent(mesh2, element, e, (length * feet/ 2) + cornerLength  + cornerWidth / 2, 1);
+                                clickEvent(mesh2, element, e, (length * feet/ 2) + cornerLength, 1, 1);
                             } else if (e.face.materialIndex === 1) {
-                                let meshclone = mesh2.clone()
-                                meshclone.rotateY(Math.PI);
-                                clickEvent(meshclone, element, e, (length * feet/ 2) + cornerLength  + cornerWidth / 2, 1)
+                                clickEvent(meshclone, element, e, (length * feet/ 2) + cornerLength, 1, 2)
                             }
                         }
                     }}
-                    onPointerOut={(e) => updateHover(element.id + 1, null)}
-                    onPointerMove={(e) => updateHover(element.id + 1, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 1, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 1, e.face.materialIndex)
+                    }}
                 >
                     <meshLambertMaterial attach = {"material-0"} map = {front} color={hovered[element.id + 1] === 0 ? 'lime' : "white"}/>
                     <meshLambertMaterial attach = {"material-1"} map = {front} color={hovered[element.id + 1] === 1 ? 'lime' : "white"}/>
@@ -578,13 +714,21 @@ const Visualizer = () => {
             mesh2.translateX(-inner * Math.cos(convertedAngle - 3 * Math.PI / 2));
             mesh2.translateY(inner * Math.sin(convertedAngle - 3 * Math.PI / 2) + inner)
         }
+
+        element["mesh"] = [mesh1, mesh2, mesh3];
         
         return (
             <>
                 <primitive 
                     object = {mesh1}
-                    onPointerOut={(e) => updateHover(element.id, null)}
-                    onPointerMove={(e) => updateHover(element.id, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id, e.face.materialIndex)
+                    }}
                 >
                     <TextureWrap args = {[element.id]}/>
                 </primitive>
@@ -592,12 +736,19 @@ const Visualizer = () => {
                 <primitive 
                     object = {mesh2}
                     onClick = {(e)=>{
-                        if ((appState === 1 || appState === 5) && e.face.materialIndex === 0) {
-                            clickEvent(mesh2, element, e, cornerLength / 2 + length / 2 * feet, 1);
+                        e.stopPropagation()
+                        if (appState === 3 && e.face.materialIndex === 0) {
+                            clickEvent(mesh2, element, e, cornerLength / 2 + length / 2 * feet, 1, 1);
                         }
                     }}
-                    onPointerOut={(e) => updateHover(element.id + 1, null)}
-                    onPointerMove={(e) => updateHover(element.id + 1, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 1, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 1, e.face.materialIndex)
+                    }}
                 >
                     <TextureWrap args = {[element.id + 1]}/>
                 </primitive>
@@ -660,13 +811,22 @@ const Visualizer = () => {
         mesh3.translateX(cornerLength / 2)
         mesh3.translateZ(-cornerheight/2)
         mesh3.translateY(-cornerWidth/2)
+
+        element["mesh"] = [mesh1, mesh2, mesh3];
+
         
         return (
             <>
                 <primitive 
                     object = {mesh1}
-                    onPointerOut={(e) => updateHover(element.id, null)}
-                    onPointerMove={(e) => updateHover(element.id, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id, e.face.materialIndex)
+                    }}
                 >
                     <TextureWrap args = {[element.id]}/>
                 </primitive>
@@ -680,12 +840,19 @@ const Visualizer = () => {
                 <primitive 
                     object = {mesh2}
                     onClick = {(e)=>{
-                        if ((appState === 1 || appState === 5) && e.face.materialIndex === 0) {
-                            clickEvent(mesh2, element, e, cornerLength / 2 + length / 2 * feet, 1);
+                        e.stopPropagation()
+                        if (appState === 3 && e.face.materialIndex === 0) {
+                            clickEvent(mesh2, element, e, cornerLength / 2 + length / 2 * feet, 1, 1);
                         }
                     }}
-                    onPointerOut={(e) => updateHover(element.id + 1, null)}
-                    onPointerMove={(e) => updateHover(element.id + 1, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 1, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id + 1, e.face.materialIndex)
+                    }}
                 >
                     <TextureWrap args = {[element.id + 1]}/>
                 </primitive>
@@ -710,37 +877,47 @@ const Visualizer = () => {
                 break;
             default:
         }
-        
-        mesh.translateX(element.adder)
+        if (element.connectedComponents[0].type === "Corner" && element.connectedComponents[0].cornerType === "X-Corner") {
+            mesh.translateX(element.adder + cornerWidth / 2);
+        } else {
+            mesh.translateX(element.adder)
+        }
+
+        element["mesh"] = [mesh];
 
         return (
                 <primitive 
                     object = {mesh}
                     onClick = {(e)=>{
-                        if ((appState === 3 || appState === 7) && e.face.materialIndex === 0) {
+                        e.stopPropagation()
+                        if (appState === 3 && e.face.materialIndex === 0) {
                             dispatch({
                                 type: "STATE_CHANGE",
-                                payload: updateState() 
+                                payload: 0
                             });
                             let object = null;
-                            element.connections[e.face.materialIndex] = 1;
                             let placement_index = oppositeIndex(e.face.materialIndex);
                             if (appState === 3) {
                                 element.dimensions[0] = element.dimensions[0] - subtractor * feet;
                                 element.adder -= feet
-                                object = createCornerObject(mesh, element.dimensions[0] / 2 + cornerLength / 2 - feet, "Corner", "White")
+                                object = createCornerObject(mesh, element.dimensions[0] / 2 + cornerLength / 2, "Corner", "White", 0)
                             } else {
-                                object = createEndCapObject(mesh, element.dimensions[0] / 2 + components[2].width / 2, "Endcap", "blue");
+                                object = createEndCapObject(mesh, element.dimensions[0] / 2 + components[2].width / 2, "Endcap", "blue", 0);
                             }
-                            object.connections[placement_index] = 1;
                             dispatch({
-                                type: "ADD_COMPONENT",
-                                payload: object
+                                type: "UPDATE_ITEM",
+                                payload: {element: element, object: object, index: e.face.materialIndex, placement_index: placement_index}
                             })
                         }
                     }} 
-                    onPointerOut={(e) => updateHover(element.id, null)}
-                    onPointerMove={(e) => updateHover(element.id, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id, e.face.materialIndex)
+                    }}
                 >
                     <TextureWrap args = {[element.id]}/>
             </primitive>
@@ -752,18 +929,19 @@ const Visualizer = () => {
         let mesh = assignMesh(element);
 
         mesh.translateX(element.adder);
+        element.mesh = [mesh];
 
         return (
             <primitive 
                 object={mesh}
                 rotation = {element.angle}
                 onClick={(e)=>{
-                    if ((appState === 1 || appState === 5) && element.connections[e.face.materialIndex] !== 1) {
+                    e.stopPropagation()
+                    if (appState === 3 && element.connections[e.face.materialIndex] !== 1) {
                         dispatch({
                             type: "STATE_CHANGE",
-                            payload: updateState() 
+                            payload: 2 
                         })
-                        element.connections[e.face.materialIndex] = 1;
                         let placement_index = oppositeIndex(e.face.materialIndex);
                         let object = null;
                         let rotation = null;
@@ -795,16 +973,21 @@ const Visualizer = () => {
                                 break;
                             default:
                             }
-                            object = createLegObject(mesh, "Leg", "white", (length * feet/ 2) + components[2].width/2, rotation, axis, 0);
-                            object.connections[placement_index] = 1;
+                            object = createLegObject(mesh, "Leg", "white", (length * feet/ 2) + components[2].width/2, rotation, axis, 0, 0);
                             dispatch({
-                                type: "ADD_COMPONENT",
-                                payload: object
+                                type: "UPDATE_ITEM",
+                                payload: {element: element, object: object, index: e.face.materialIndex, placement_index: placement_index}
                             })
                         }
                     }}
-                onPointerOut={(e) => updateHover(element.id, null)}
-                onPointerMove={(e) => updateHover(element.id, e.face.materialIndex)}
+                    onPointerOut={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id, null)
+                    }}
+                    onPointerMove={(e) => {
+                        e.stopPropagation();
+                        updateHover(element.id, e.face.materialIndex)
+                    }}
             >
                 {[...Array(6)].map((_, index) => (
                 <meshStandardMaterial attach={`material-${index}`} key={index} color={hovered[element.id] === index ? element.connections[index] === 1 ? "red": 'lime' : element.color}/>
@@ -844,79 +1027,31 @@ const Visualizer = () => {
         )
     }
     const axesHelper = new THREE.AxesHelper( 5 );
-
-
+    const cameraHelper = new THREE.CameraHelper(params.args[2])
+    const canvas = useRef(null);
+    const cam = params.args[2];
+    cam.lookAt(new THREE.Vector3(0, 0, 0))
+    // cam.lookAt(state.scene.position)
+     
     return (
-        <>
-        <div className = "col">
-          <button onClick = {(event)=>{
-            if ((appState === 8 && canvasComponents.length > 1) || (appState === 0 && canvasComponents.length > 1) || (appState % 2 === 0 && appState !== 8 && appState !== 0 && canvasComponents.length > 1)) {
-              dispatch({
-                type: "UNDO_PREVIOUS_ACTION",
-                payload: null
-              })
-            }
-          }} style = {{ marginLeft: "-10px", marginBottom: "10px", background:"#ff0000"}}>Undo Previous Step</button>
-          <label 
-                      style = {{ marginLeft: "10px", marginRight: "10px"}}>Leg Length: </label>
-          <select id = "select" style = {{width: "100px"}} onChange = {(e)=>{
-            if(appState === 1 || appState === 5) {
-              setLength(e.target.value)
-            } else {
-              let select_element = document.getElementById("select")
-              select_element.selectedIndex = length - 2;
-            }
-          }}>
-            <option value = "2">2</option>
-            <option value = "3" selected>3 (Default) </option>
-            <option value = "4">4</option>
-            <option value = "5">5</option>
-            <option value = "6">6</option>
-            <option value = "7">7</option>
-            <option value = "8">8</option>
-          </select>
-          <label style ={{marginLeft: "10px"}}>Corner Type: </label>
-          <select onChange = {(e)=>{
-            setCornerType(e.target.value);
-          }}>
-            <option value = "Vertical" selected>Vertical</option>
-            <option value = "Flat">Flat</option>
-            <option value = "T-Corner">T-Corner</option>
-            <option value = "Y-Corner">Y-Corner</option>
-            <option value = "X-Corner">X-Corner</option>
-            <option value = "+-Corner">+-Corner</option>
-          </select>
-          <label style = {{marginLeft: "10px"}}>Corner Angle</label>
-          <input
-            type='number'
-            id='Legs'
-            step = "10"
-            max = "180"
-            value = {angle}
-            min = "-180"
-            onChange = {(event)=> {
-                if (!isNaN(event.target.value)) {
-                  setAngle(event.target.value)
-                }
-              }
-            }
-          >
-          </input>
-        </div>
-          <Canvas id = "canvas" style = {{color: "black", width: "700px", height: "380px", marginLeft: "10px", marginRight: "20px", background:"black"}}>
-                <PerspectiveCamera args = {[10, 10, 10]}/>
-                <OrbitControls/>
-                <Stars/>
+            <Canvas 
+                ref = {canvas}
+                frameloop='demand'
+                id = "canvas" 
+                style = {{color: "black", width: params.args[0], height: params.args[1], background:"white"}}
+                camera = {params.args[2]}
+                >
+                    <OrbitControls enableRotate = {params.args[3]} mouseButtons={params.args[4]}/>
+                    {/* <primitive object={cameraHelper}/> */}
+
                 <ambientLight intensity = {5}/>
                 <directionalLight position={[5, 10, 1]} intensity={1}/>
                 <Physics>
-                    {/* <Plane/> */}
+                    <Plane/>
                     <RenderComponents/>
                 </Physics>
-                <primitive object={axesHelper}/>
+                {/* <primitive object={axesHelper}/> */}
               </Canvas>
-        </>
-
     )
 }
 

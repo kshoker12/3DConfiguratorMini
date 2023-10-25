@@ -1,145 +1,111 @@
 import React, {useContext} from 'react';
 import {AppContext} from '../context/AppContext';
+import 'bootstrap/dist/css/bootstrap.min.css';
 
 const ComponentMenu = () => {
     const {dispatch, payload} = useContext(AppContext);
     const {components} = useContext(AppContext);
     const {appState} = useContext(AppContext);
+    const {canvasComponents} = useContext(AppContext);
 
-    const updateLegs = () => {
-        if (components[0].quantity === 0) {
-            alert("ERROR: No more Legs");
+    function CreateButton(args) {
+        const updateType = (type) => {
             dispatch({
-                type: "UPDATE_LEGS",
-                payload: 0,
+                type: "UPDATE_TYPE",
+                payload: type
             })
-            return;
+        }
+        const attach = () => {
+
+            dispatch({
+                type: "ATTACH",
+                payload: null
+            })
         }
 
-        if (components[1].quantity > 0) {
+        const stateChange = () => {
             dispatch({
                 type: "STATE_CHANGE",
-                payload: 1
-            })
-        } else {
-            dispatch({
-                type: "STATE_CHANGE",
-                payload: 5
-            })
+                payload: 3 
+            });
         }
 
-        dispatch({
-            type: "UPDATE_LEGS",
-            payload: components[0].quantity - 1
-        })
-
+        return (
+            <button style = {{background: "lime", marginBottom: "5px"}} onClick={()=>{
+                stateChange();
+                if (args.args[1] !== "") {
+                    updateType(args.args[1]);
+                }
+                if (args.args[1] === "Endcap") {
+                    dispatch({
+                        type: "CHANGE_TO_ENDCAP",
+                        payload: null
+                    })
+                }
+                
+                attach();
+            }}>{args.args[0]}</button>
+        )
     }
 
-    const updateCorners = () => {
-        if (components[1].quantity === 0) {
-            alert("ERROR: No more Corners");
-            dispatch({
-                type: "UPDATE_LEGS",
-                payload: 0,
-            })
-            return;
-        }
-
-        dispatch({
-            type: "STATE_CHANGE",
-            payload: 3
-        })
-
-
-        dispatch({
-            type: "UPDATE_CORNERS",
-            payload: components[1].quantity - 1
-        })
+    function StateOne() {
+        return (
+            <>
+                <h3>Components</h3>
+                <div className='row' style = {{padding: "30px", margin: "20px"}}>
+                    <CreateButton args = {["Vertical Corner", "Vertical"]}/>
+                    <CreateButton args = {["Flat Corner", "Flat"]}/>
+                    <CreateButton args = {["T-Shape Corner", "T-Corner"]}/>
+                    <CreateButton args = {["Y-Shape Corner", "Y-Corner"]}/>
+                    <CreateButton args = {["X-Shape Corner", "X-Corner"]}/>
+                    <CreateButton args = {["Plus-Shape Corner", "+-Corner"]}/>
+                    <CreateButton args = {["Endcap", "Endcap"]}/>
+                </div>
+            </>
+        )
     }
 
-    const updateEndcaps = () => {
-        if (components[2].quantity === 0) {
-            alert("ERROR: No more Endcaps");
-            dispatch({
-                type: "UPDATE_LEGS",
-                payload: 0,
-            })
-            return;
-        }
-            dispatch({
-                type: "STATE_CHANGE",
-                payload: 7
-            })
-
-
-        dispatch({
-            type: "UPDATE_ENDCAPS",
-            payload: components[2].quantity - 1
-        })
-
+    function StateTwo() {
+        return (
+            <>
+                <h3>Components</h3>
+                <div className='row' style = {{padding: "30px", margin: "20px"}}>
+                    <CreateButton args = {["Legs", ""]}/>
+                </div>
+            </>
+        )
     }
 
-    if (appState === 6) {
+    function StateThree() {
+        let el = -1;
         return (
             <>
-                <h3>Components</h3>
-                <br/>
-                <div>
-                    <h4>Legs: {components[0].quantity} remaining</h4>
-                    <button style = {{background: "red"}}>Select</button>
-                    <h4>Corners: {components[1].quantity} remaining</h4>
-                    <button style = {{background: "red"}}>Select</button>
-                    <h4>Endcaps: {components[2].quantity} remaining</h4>
-                    <button style = {{background: "#00ff00"}} onClick = {() => {updateEndcaps()}}>Select</button>
-                </div>
-            </>
-        );
-    } else if (appState === 2) {
-        return (
-            <>
-                <h3>Components</h3>
-                <br/>
-                <div>
-                    <h4>Legs: {components[0].quantity} remaining</h4>
-                    <button style = {{background: "red"}}>Select</button>
-                    <h4>Corners: {components[1].quantity} remaining</h4>
-                    <button style = {{background: "#00ff00"}} onClick = {() => {updateCorners()}}>Select</button>
-                    <h4>Endcaps: {components[2].quantity} remaining</h4>
-                    <button style = {{background: "red"}}>Select</button>
-                </div>
-            </>
-        );
-    } else if (appState === 0 || appState === 4) {
-        return (
-            <>
-                <h3>Components</h3>
-                <br/>
-                <div>
-                    <h4>Legs: {components[0].quantity} remaining</h4>
-                    <button style = {{background: "#00ff00"}} onClick = {() => {updateLegs()}}>Select</button>
-                    <h4>Corners: {components[1].quantity} remaining</h4>
-                    <button style = {{background: "red"}}>Select</button>
-                    <h4>Endcaps: {components[2].quantity} remaining</h4>
-                    <button style = {{background: "red"}}>Select</button>
-                </div>
-            </>
-        );
-    } else if (appState % 2 === 1 || appState=== 8) {
-        return (
-            <>
-                <h3>Components</h3>
-                <br/>
-                <div>
-                    <h4>Legs: {components[0].quantity} remaining</h4>
-                    <button style = {{background: "red"}}>Select</button>
-                    <h4>Corners: {components[1].quantity} remaining</h4>
-                    <button style = {{background: "red"}}>Select</button>
-                    <h4>Endcaps: {components[2].quantity} remaining</h4>
-                    <button style = {{background: "red"}}>Select</button>
+                <h3>Canvas Components</h3>
+                <div className='row' style = {{margin: "20px"}}>
+                    {canvasComponents.map((element)=> {
+                        el++;
+                        return (
+                            <CreateButton args = {["id: " + el + " - " + element.type, ""]}/>
+                        )
+                    })}
                 </div>
             </>
         );
     }
+
+    if (appState === 0) {
+        return (
+            <StateOne/>
+        );
+    } else if (appState === 1 || appState === 2) {
+        return (
+            <StateTwo/>
+        );
+    } else {
+        return (
+            <StateThree/>
+        );
+    } 
 }
 
 export default ComponentMenu;
